@@ -11,10 +11,11 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+from outputs.mindmap import generate_mindmap_image
+
 # در آینده این importها به ایجنت‌های جدا تبدیل می‌شوند
 # from research.searcher import ResearchAgent
 # from research.synthesizer import WriterAgent
-# from outputs.mindmap import VisualizerAgent
 # from outputs.audio import AudioAgent
 
 STATE_DIR = Path("state")
@@ -48,7 +49,7 @@ async def handle_research_request(topic: str, update=None, context=None):
     # مرحله ۲: نگارش مقاله علمی (آینده: Writer Agent)
     document_package = await generate_document(topic, research_data)
 
-    # مرحله ۳: مایند مپ (آینده: Visualizer Agent)
+    # مرحله ۳: مایند مپ (Visualizer)
     mindmap_file = await generate_mindmap(topic, research_data)
 
     # مرحله ۴: خلاصه صوتی (آینده: Audio Agent)
@@ -58,7 +59,8 @@ async def handle_research_request(topic: str, update=None, context=None):
     save_history({
         "topic": topic,
         "timestamp": datetime.now().isoformat(),
-        "status": "completed"
+        "status": "completed",
+        "mindmap": mindmap_file,
     })
 
     # ارسال به تلگرام (اگر در دسترس باشد)
@@ -76,10 +78,28 @@ async def run_research(topic: str) -> dict:
     """جایگزین Research Agent – فعلاً اسکلت"""
     print(f"[RESEARCH] در حال تحقیق در مورد: {topic}")
     # TODO: اتصال به Gemini + جستجوی منابع
+    # فعلاً ساختار پیش‌فرض دارویی برمی‌گردانیم تا مایند مپ محتوا داشته باشد
     return {
         "topic": topic,
         "summary": f"خلاصه اولیه تحقیق در مورد {topic}",
-        "key_points": [],
+        "key_points": [
+            {
+                "title": "مکانیسم اثر",
+                "children": ["گیرنده هدف", "مسیر سیگنالینگ", "نتیجه بالینی"]
+            },
+            {
+                "title": "موارد مصرف",
+                "children": ["اندیکاسیون اصلی", "موارد off-label", "گروه‌های خاص"]
+            },
+            {
+                "title": "عوارض و تداخلات",
+                "children": ["عوارض شایع", "عوارض جدی", "تداخلات مهم"]
+            },
+            {
+                "title": "نکات بالینی",
+                "children": ["دوز و نحوه مصرف", "پایش بیمار", "هشدارهای مهم"]
+            },
+        ],
         "sources": []
     }
 
@@ -96,10 +116,14 @@ async def generate_document(topic: str, research_data: dict) -> dict:
 
 
 async def generate_mindmap(topic: str, research_data: dict) -> str | None:
-    """جایگزین Visualizer Agent – فعلاً اسکلت"""
+    """تولید مایند مپ تصویری با ماژول outputs.mindmap"""
     print(f"[VISUALIZER] در حال ساخت مایند مپ برای: {topic}")
-    # TODO: تولید تصویر مایند مپ
-    return None
+    try:
+        path = generate_mindmap_image(topic, research_data)
+        return path
+    except Exception as e:
+        print(f"[VISUALIZER] خطا در ساخت مایند مپ: {e}")
+        return None
 
 
 async def generate_audio_summary(topic: str, research_data: dict) -> str | None:
@@ -111,7 +135,17 @@ async def generate_audio_summary(topic: str, research_data: dict) -> str | None:
 
 async def send_package_to_telegram(update, document_package, mindmap_file, audio_file):
     """ارسال پکیج نهایی به کاربر"""
-    await update.message.reply_text(
-        "تحقیق تکمیل شد.\n"
-        "(در نسخه‌های بعدی فایل‌های DOCX، PDF، مایند مپ و صوت اینجا ارسال می‌شوند)"
-    )
+    if mindmap_file and Path(mindmap_file).exists():
+        try:
+            with open(mindmap_file, "rb") as f:
+                await update.message.reply_photo(
+                    photo=f,
+                    caption=f"مایند مپ موضوع:\n{document_package.get('abstract', '')[:200]}"
+                )
+        except Exception as e:
+            await update.message.reply_text(f"مایند مپ ساخته شد اما ارسال نشد: {e}")
+    else:
+        await update.message.reply_text(
+            "تحقیق تکمیل شد.\n"
+            "(مایند مپ در این اجرا تولید نشد – جزئیات در لاگ)"
+        )
