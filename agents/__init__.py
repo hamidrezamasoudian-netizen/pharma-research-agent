@@ -10,6 +10,7 @@ from .researcher import ResearcherAgent
 from .writer import WriterAgent
 from .visualizer import VisualizerAgent
 from .audio_agent import AudioAgent
+from .reviewer import ReviewerAgent
 from .supervisor import SupervisorAgent
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "WriterAgent",
     "VisualizerAgent",
     "AudioAgent",
+    "ReviewerAgent",
     "SupervisorAgent",
 ]
