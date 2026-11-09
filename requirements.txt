@@ -1,0 +1,11 @@
+python-telegram-bot>=21.0
+google-genai
+requests
+python-docx
+reportlab
+Pillow
+edge-tts
+arabic-reshaper
+python-bidi
+markdown
+pypdf
