@@ -1,0 +1,99 @@
+name: Run Pharma Research Agent
+
+on:
+  # اجرای دستی با امکان دادن موضوع
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "موضوع تحقیق (اگر خالی باشد اجرا نمی‌شود)"
+        required: true
+        default: ""
+
+  # زمان‌بندی اختیاری – فعلاً غیرفعال؛ در صورت نیاز از کامنت خارج کنید
+  # schedule:
+  #   - cron: "30 6 * * 1"   # هر دوشنبه ساعت ۱۰:۰۰ تهران
+  #   - cron: "30 15 * * 4"  # هر پنجشنبه ساعت ۱۹:۰۰ تهران
+
+permissions:
+  contents: write
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-dejavu-core
+
+      - name: Install Vazirmatn Persian font (optional but recommended)
+        run: |
+          mkdir -p fonts
+          wget -q -O vazir.zip "https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip" || true
+          if [ -f vazir.zip ]; then
+            unzip -q vazir.zip -d vazir_tmp || true
+            find vazir_tmp -name "Vazirmatn-Regular.ttf" -exec cp {} fonts/ \; || true
+            find vazir_tmp -name "Vazirmatn-Bold.ttf" -exec cp {} fonts/ \; || true
+            ls -la fonts/ || true
+          fi
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Research Agent
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CUSTOM_TOPIC: ${{ github.event.inputs.topic }}
+        run: |
+          python - <<'PY'
+          import asyncio
+          import os
+          from agent_core import handle_research_request
+
+          topic = os.environ.get("CUSTOM_TOPIC", "").strip()
+          if not topic:
+              print("موضوع خالی است – اجرا متوقف شد.")
+              raise SystemExit(0)
+
+          print(f"شروع تحقیق برای موضوع: {topic}")
+          result = asyncio.run(handle_research_request(topic))
+          print("نتیجه:", {k: (v if not isinstance(v, dict) else list(v.keys())) for k, v in (result or {}).items()})
+          PY
+
+      - name: Upload generated artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-package
+          path: |
+            outputs/generated/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit research history (optional)
+        if: always()
+        run: |
+          if [ -f state/research_history.json ]; then
+            git config user.name "pharma-research-bot"
+            git config user.email "bot@users.noreply.github.com"
+            git add state/research_history.json || true
+            git diff --staged --quiet || git commit -m "chore: update research history"
+            git push || true
+          fi
