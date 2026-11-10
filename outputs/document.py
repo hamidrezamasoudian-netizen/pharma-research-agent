@@ -1,19 +1,14 @@
 """
-document.py – مقاله علمی DOCX/PDF با فارسی راست‌چین و فونت صحیح
+document.py – مقاله علمی (فعلاً فقط PDF؛ Word موقتاً خاموش)
 """
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from datetime import datetime
 from typing import Any
-
-from docx import Document
-from docx.shared import Pt, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -30,11 +25,13 @@ try:
     def reshape_fa(text: str) -> str:
         if not text:
             return ""
-        # برای PDF/تصویر: اتصال حروف + جهت راست‌به‌چپ
         return get_display(arabic_reshaper.reshape(str(text)))
 except Exception:
     def reshape_fa(text: str) -> str:
         return str(text or "")
+
+# Word موقتاً غیرفعال
+ENABLE_DOCX = os.environ.get("ENABLE_DOCX", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 OUTPUT_DIR = Path("outputs/generated")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -59,38 +56,6 @@ def _safe_filename(text: str, max_len: int = 50) -> str:
     text = re.sub(r"[^\w\s\-آ-یA-Za-z0-9]", "", text)
     text = re.sub(r"\s+", "_", text.strip())
     return text[:max_len] or "article"
-
-
-def _set_run_font(run, name: str = "Tahoma", size: int = 11, bold: bool = False):
-    run.bold = bold
-    run.font.size = Pt(size)
-    run.font.name = name
-    rPr = run._element.get_or_add_rPr()
-    rFonts = rPr.get_or_add_rFonts()
-    rFonts.set(qn("w:ascii"), name)
-    rFonts.set(qn("w:hAnsi"), name)
-    rFonts.set(qn("w:cs"), name)
-    rFonts.set(qn("w:eastAsia"), name)
-    # علامت‌گذاری پیچیده (فارسی)
-    cs = OxmlElement("w:cs")
-    rPr.append(cs)
-    rtl = OxmlElement("w:rtl")
-    rPr.append(rtl)
-
-
-def _set_paragraph_rtl(paragraph):
-    pPr = paragraph._p.get_or_add_pPr()
-    # حذف bidi تکراری
-    for child in list(pPr):
-        if child.tag == qn("w:bidi"):
-            pPr.remove(child)
-    bidi = OxmlElement("w:bidi")
-    bidi.set(qn("w:val"), "1")
-    pPr.append(bidi)
-    jc = OxmlElement("w:jc")
-    jc.set(qn("w:val"), "right")
-    pPr.append(jc)
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
 
 def build_article_content(topic: str, research_data: dict | None = None) -> dict[str, Any]:
@@ -156,81 +121,6 @@ def build_article_content(topic: str, research_data: dict | None = None) -> dict
     }
 
 
-def create_docx(content: dict[str, Any], output_path: Path) -> Path:
-    doc = Document()
-    section = doc.sections[0]
-    section.page_width = Cm(21)
-    section.page_height = Cm(29.7)
-    section.right_margin = Cm(2.2)
-    section.left_margin = Cm(2.2)
-    section.top_margin = Cm(2.2)
-    section.bottom_margin = Cm(2.2)
-
-    # فونت پیش‌فرض سند
-    style = doc.styles["Normal"]
-    style.font.name = "Tahoma"
-    style.font.size = Pt(11)
-    style.element.rPr.rFonts.set(qn("w:cs"), "Tahoma")
-
-    font_name = "Tahoma"
-
-    def add_heading_fa(text: str):
-        p = doc.add_paragraph()
-        run = p.add_run(text)
-        _set_run_font(run, font_name, 13, bold=True)
-        _set_paragraph_rtl(p)
-        p.paragraph_format.space_before = Pt(10)
-        p.paragraph_format.space_after = Pt(4)
-
-    def add_para_fa(text: str, size: int = 11, bold: bool = False, center: bool = False):
-        for line in str(text).split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            p = doc.add_paragraph()
-            run = p.add_run(line)
-            _set_run_font(run, font_name, size, bold=bold)
-            if center:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            else:
-                _set_paragraph_rtl(p)
-            p.paragraph_format.space_after = Pt(3)
-            p.paragraph_format.line_spacing = 1.3
-
-    title_p = doc.add_paragraph()
-    title_run = title_p.add_run(content["title"])
-    _set_run_font(title_run, font_name, 14, bold=True)
-    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    date_p = doc.add_paragraph()
-    date_run = date_p.add_run(f"تاریخ تهیه: {datetime.now().strftime('%Y/%m/%d')}")
-    _set_run_font(date_run, font_name, 9)
-    date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    for heading, key in [
-        ("چکیده", "abstract"),
-        ("مقدمه", "introduction"),
-        ("روش بررسی", "methods"),
-        ("یافته‌ها", "findings"),
-        ("بحث", "discussion"),
-        ("نتیجه‌گیری", "conclusion"),
-    ]:
-        add_heading_fa(heading)
-        add_para_fa(content[key], size=11)
-
-    add_heading_fa("منابع")
-    for i, ref in enumerate(content["references"], 1):
-        add_para_fa(f"{i}. {ref}", size=10)
-
-    footer = doc.add_paragraph()
-    fr = footer.add_run("تولیدشده توسط Pharma Research Agent | صرفاً جنبه آموزشی و کمک‌تصمیم")
-    _set_run_font(fr, font_name, 8)
-    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    doc.save(output_path)
-    return output_path
-
-
 def _register_pdf_font() -> str:
     font_path = _find_font()
     if font_path:
@@ -290,9 +180,7 @@ def create_pdf(content: dict[str, Any], output_path: Path) -> Path:
     ))
 
     def fa_pdf(text: str) -> str:
-        """Escape + reshape فارسی برای ReportLab"""
         raw = str(text or "")
-        # هر خط جدا reshape شود تا <br/> خراب نشود
         lines = raw.split("\n")
         out = []
         for line in lines:
@@ -344,11 +232,18 @@ def generate_article(
     if not output_basename:
         output_basename = f"article_{_safe_filename(topic)}"
 
-    docx_path = OUTPUT_DIR / f"{output_basename}.docx"
+    docx_path = None
     pdf_path = OUTPUT_DIR / f"{output_basename}.pdf"
 
-    create_docx(content, docx_path)
-    print(f"[DOCUMENT] DOCX → {docx_path}")
+    if ENABLE_DOCX:
+        try:
+            from docx import Document  # noqa: F401
+            # اگر بعداً دوباره فعال شد، می‌توان create_docx را برگرداند
+            print("[DOCUMENT] DOCX فعال است اما تابع create_docx در این نسخه ساده نشده")
+        except Exception as e:
+            print(f"[DOCUMENT] DOCX رد شد: {e}")
+    else:
+        print("[DOCUMENT] تولید Word موقتاً غیرفعال است (ENABLE_DOCX=false)")
 
     try:
         create_pdf(content, pdf_path)
@@ -358,7 +253,7 @@ def generate_article(
         pdf_path = None
 
     return {
-        "docx_path": str(docx_path),
+        "docx_path": str(docx_path) if docx_path else None,
         "pdf_path": str(pdf_path) if pdf_path else None,
         "abstract": content["abstract"],
         "title": content["title"],
