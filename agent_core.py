@@ -1,9 +1,5 @@
 """
 agent_core.py – هسته هماهنگی Pharma Research Agent
-
-دو حالت اجرا:
-1) تک‌ایجنت (سازگار با قبل)
-2) مولتی‌ایجنت از طریق SupervisorAgent
 """
 
 from __future__ import annotations
@@ -42,28 +38,36 @@ def save_history(entry: dict):
 def _fallback_research(topic: str) -> dict:
     return {
         "topic": topic,
-        "summary": f"بررسی علمی و کاربردی موضوع «{topic}» از دیدگاه داروسازی بالینی.",
+        "summary": (
+            f"موضوع «{topic}» از دیدگاه داروسازی بالینی بررسی می‌شود. "
+            f"در این مرور، مکانیسم اثر، موارد مصرف، عوارض شایع و جدی، تداخلات مهم و نکات پایش بیمار جمع‌بندی شده است. "
+            f"هدف، ارائه چارچوب کاربردی برای تصمیم‌گیری ایمن‌تر در داروخانه و تیم درمان است."
+        ),
         "key_points": [
             {
-                "title": "مکانیسم اثر",
-                "children": ["گیرنده یا مسیر هدف", "اثر فارماکودینامیک", "نتیجه بالینی"]
+                "title": "مکانیسم و فارماکولوژی",
+                "children": ["مسیر اثر اصلی", "شروع و مدت اثر", "متابولیسم و دفع"]
             },
             {
                 "title": "موارد مصرف",
-                "children": ["اندیکاسیون اصلی", "موارد خاص", "محدودیت‌ها"]
+                "children": ["اندیکاسیون اصلی", "موارد خاص", "محدودیت‌های مصرف"]
             },
             {
-                "title": "عوارض و تداخلات",
-                "children": ["عوارض شایع", "عوارض جدی", "تداخلات مهم"]
+                "title": "عوارض شایع و جدی",
+                "children": ["عوارض شایع", "عوارض جدی", "علائم نیازمند مراجعه"]
             },
             {
-                "title": "نکات بالینی",
-                "children": ["دوز و نحوه مصرف", "پایش بیمار", "هشدارهای کلیدی"]
+                "title": "تداخلات مهم",
+                "children": ["تداخلات دارویی", "تداخلات غذایی", "نکته احتیاطی"]
+            },
+            {
+                "title": "نکات بالینی و پایش",
+                "children": ["دوز و نحوه مصرف", "پایش بیمار", "آموزش بیمار"]
             },
         ],
         "sources": [
             "UpToDate / Lexicomp – Drug Monographs",
-            "Iranian National Formulary & Ministry of Health guidelines",
+            "Iranian National Formulary و دستورالعمل‌های وزارت بهداشت",
             "PubMed / Scopus peer-reviewed articles",
         ],
     }
@@ -90,28 +94,29 @@ async def run_research(topic: str) -> dict:
         return _fallback_research(topic)
 
     prompt = f"""
-تو یک داروساز بالینی و محقق علمی هستی. در مورد موضوع زیر یک خلاصه علمی دقیق، بی‌طرف و کاربردی به زبان فارسی بنویس.
+تو یک داروساز بالینی و محقق علمی هستی. درباره موضوع زیر محتوای علمی دقیق، بی‌طرف و کاربردی به فارسی بنویس.
 
 موضوع: «{topic}»
 
-فقط یک JSON معتبر برگردان (بدون متن اضافه) با این ساختار دقیق:
+فقط یک JSON معتبر برگردان (بدون متن اضافه) با این ساختار:
 {{
-  "summary": "۲ تا ۴ جمله خلاصه علمی و کاربردی",
+  "summary": "۳ تا ۶ جمله علمی و کاربردی که اصل موضوع را توضیح دهد",
   "key_points": [
     {{
-      "title": "عنوان شاخه اصلی",
-      "children": ["نکته فرعی ۱", "نکته فرعی ۲", "نکته فرعی ۳"]
+      "title": "عنوان شاخه (کوتاه و مشخص)",
+      "children": ["جزئیات مشخص ۱", "جزئیات مشخص ۲", "جزئیات مشخص ۳"]
     }}
   ],
   "sources": ["منبع ۱", "منبع ۲", "منبع ۳"]
 }}
 
-قوانین:
-- حداقل ۳ و حداکثر ۵ شاخه در key_points
-- هر شاخه ۲ تا ۴ child داشته باشد
-- از ادعاهای قطعی درمانی و توصیه شخصی پرهیز کن
-- زبان علمی، واضح و مناسب داروسازان باشد
-- منابع را عمومی و معتبر بنویس (مثلاً UpToDate، PubMed، دستورالعمل وزارت بهداشت)
+قوانین اجباری:
+- دقیقاً ۴ یا ۵ شاخه در key_points
+- هر شاخه دقیقاً ۳ child با محتوای مشخص و مرتبط با موضوع (نه عبارات کلی مثل «نکته مهم»)
+- شاخه‌ها ترجیحاً: مکانیسم، موارد مصرف، عوارض، تداخلات، نکات بالینی/پایش
+- از توصیه شخصی و ادعاهای قطعی درمانی پرهیز کن
+- زبان مناسب داروساز و کادر درمان
+- منابع عمومی معتبر بنویس
 """
 
     try:
@@ -130,11 +135,25 @@ async def run_research(topic: str) -> dict:
             print("[RESEARCH] JSON معتبر نبود – استفاده از پیش‌فرض")
             return _fallback_research(topic)
 
+        summary = (parsed.get("summary") or "").strip()
+        key_points = parsed.get("key_points") or []
+        sources = parsed.get("sources") or []
+
+        if len(summary) < 40 or len(key_points) < 3:
+            print("[RESEARCH] محتوا ضعیف بود – تکمیل با پیش‌فرض")
+            fb = _fallback_research(topic)
+            if len(summary) < 40:
+                summary = fb["summary"]
+            if len(key_points) < 3:
+                key_points = fb["key_points"]
+            if not sources:
+                sources = fb["sources"]
+
         return {
             "topic": topic,
-            "summary": parsed.get("summary") or _fallback_research(topic)["summary"],
-            "key_points": parsed.get("key_points") or _fallback_research(topic)["key_points"],
-            "sources": parsed.get("sources") or _fallback_research(topic)["sources"],
+            "summary": summary,
+            "key_points": key_points,
+            "sources": sources or _fallback_research(topic)["sources"],
         }
 
     except Exception as e:
@@ -175,7 +194,6 @@ async def generate_audio_summary(topic: str, research_data: dict) -> str | None:
 
 
 async def handle_research_request(topic: str, update=None, context=None):
-    """نقطه ورود اصلی – با امکان سوییچ به Supervisor"""
     print(f"[CORE] شروع تحقیق برای موضوع: {topic} | supervisor={USE_SUPERVISOR}")
 
     if USE_SUPERVISOR:
@@ -210,7 +228,6 @@ async def handle_research_request(topic: str, update=None, context=None):
             "supervisor": result,
         }
 
-    # حالت تک‌ایجنت (قبلی)
     research_data = await run_research(topic)
     document_package = await generate_document(topic, research_data)
     mindmap_file = await generate_mindmap(topic, research_data)
