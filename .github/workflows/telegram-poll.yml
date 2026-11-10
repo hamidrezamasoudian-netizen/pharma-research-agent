@@ -2,7 +2,6 @@ name: Telegram Poller
 
 on:
   schedule:
-    # هر ۵ دقیقه یک‌بار
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
@@ -47,7 +46,7 @@ jobs:
       - name: Poll Telegram and process new topics
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          GEMINI_MODEL: gemini-3.8-flash
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
           USE_SUPERVISOR: "true"
