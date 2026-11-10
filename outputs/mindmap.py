@@ -1,26 +1,15 @@
 """
-mindmap.py – مایند مپ با فونت فارسی خوانا و جزئیات
+mindmap.py – مایند مپ با برچسب‌های لاتین (موقت) برای جلوگیری از برعکس‌نویسی فارسی
 """
 
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
-
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-
-    def reshape_fa(text: str) -> str:
-        if not text:
-            return ""
-        return get_display(arabic_reshaper.reshape(str(text)))
-except Exception:
-    def reshape_fa(text: str) -> str:
-        return str(text or "")
 
 COLORS = {
     "bg": (248, 250, 252),
@@ -37,14 +26,97 @@ COLORS = {
 OUTPUT_DIR = Path("outputs/generated")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# نگاشت تقریبی فارسی → لاتین برای نمایش موقت
+FA_TO_EN = {
+    "مکانیسم": "Mechanism",
+    "مکانیسم اثر": "Mechanism",
+    "مکانیسم و فارماکولوژی": "Pharmacology",
+    "فارماکولوژی": "Pharmacology",
+    "موارد مصرف": "Indications",
+    "مصرف": "Use",
+    "عوارض": "Adverse effects",
+    "عوارض شایع و جدی": "Adverse effects",
+    "تداخلات": "Interactions",
+    "تداخلات مهم": "Interactions",
+    "تداخل با داروهای قلبی": "Cardiac drug interactions",
+    "پایش": "Monitoring",
+    "نکات بالینی و پایش": "Clinical monitoring",
+    "کنتراست و تصویربرداری": "Contrast imaging",
+    "مسیر اثر": "Pathway",
+    "مسیر اثر اصلی": "Main pathway",
+    "شروع اثر": "Onset",
+    "شروع و مدت اثر": "Onset/duration",
+    "متابولیسم": "Metabolism",
+    "متابولیسم و دفع": "Metabolism/excretion",
+    "اندیکاسیون": "Indication",
+    "اندیکاسیون اصلی": "Primary indication",
+    "محدودیت": "Limitation",
+    "محدودیت‌ها": "Limitations",
+    "محدودیت‌های مصرف": "Use limits",
+    "گروه خاص": "Special groups",
+    "موارد خاص": "Special cases",
+    "شایع": "Common",
+    "عوارض شایع": "Common AEs",
+    "جدی": "Serious",
+    "عوارض جدی": "Serious AEs",
+    "هشدار": "Warning",
+    "علائم هشدار": "Warning signs",
+    "علائم نیازمند مراجعه": "Seek care signs",
+    "دارویی": "Drug-drug",
+    "تداخلات دارویی": "Drug-drug",
+    "غذایی": "Food",
+    "تداخلات غذایی": "Food interactions",
+    "احتیاط": "Caution",
+    "نکته احتیاطی": "Caution",
+    "دوز": "Dose",
+    "دوز و نحوه مصرف": "Dosing",
+    "آزمایش": "Labs",
+    "آموزش": "Counseling",
+    "آموزش بیمار": "Patient counseling",
+    "پایش بیمار": "Patient monitoring",
+    "کاهش گلوکونئوژنز کبدی": "Less hepatic gluconeogenesis",
+    "افزایش حساسیت به انسولین": "Insulin sensitivity",
+    "کاهش جذب روده‌ای گلوکز": "Less GI glucose uptake",
+    "مهارکننده ACE و ARB و خطر افت عملکرد کلیه": "ACE/ARB kidney risk",
+    "دیورتیک‌ها و کم‌آبی": "Diuretics/dehydration",
+    "داروهای مؤثر بر پرفیوژن کلیوی": "Renal perfusion drugs",
+    "اسیدوز لاکتیک نادر اما خطرناک": "Lactic acidosis risk",
+    "اختلال گوارشی شایع در شروع": "GI upset early",
+    "کمبود ویتامین B12 در مصرف طولانی": "B12 deficiency long-term",
+    "قطع موقت قبل از کنتراست یددار": "Hold before iodinated contrast",
+    "ارزیابی eGFR": "Check eGFR",
+    "شروع مجدد پس از اطمینان از عملکرد کلیه": "Restart after renal OK",
+    "کراتینین و eGFR منظم": "Creatinine/eGFR",
+    "علائم اسیدوز و کم‌آبی": "Acidosis/dehydration signs",
+    "آموزش بیمار درباره قطع در بیماری حاد": "Sick-day rules",
+}
+
+
+def to_latin_label(text: str, max_len: int = 34) -> str:
+    t = str(text or "").strip()
+    if not t:
+        return "Item"
+    if t in FA_TO_EN:
+        return FA_TO_EN[t][:max_len]
+    # اگر از قبل لاتین بود
+    if re.search(r"[A-Za-z]", t) and not re.search(r"[\u0600-\u06FF]", t):
+        return t[:max_len]
+    # نگاشت جزئی
+    for fa, en in FA_TO_EN.items():
+        if fa in t:
+            return en[:max_len]
+    # اگر فارسی بود و ترجمه نداشت: کد کوتاه لاتین
+    ascii_only = re.sub(r"[^A-Za-z0-9\s\-/]", "", t).strip()
+    if ascii_only:
+        return ascii_only[:max_len]
+    return ("Topic " + str(abs(hash(t)) % 1000))[:max_len]
+
 
 def _load_font(size: int, bold: bool = False):
-    # اولویت با فونت فارسی واقعی
     candidates = [
-        Path("fonts/Vazirmatn-Bold.ttf") if bold else Path("fonts/Vazirmatn-Regular.ttf"),
-        Path("fonts/Vazirmatn-Regular.ttf"),
-        Path("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf") if bold else Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
         Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("fonts/Vazirmatn-Regular.ttf"),
     ]
     for p in candidates:
         if p.exists():
@@ -61,8 +133,7 @@ def _wrap_text(text: str, font, max_width: int, draw: ImageDraw.ImageDraw) -> li
     current = ""
     for w in words:
         test = (current + " " + w).strip()
-        probe = reshape_fa(test)
-        bbox = draw.textbbox((0, 0), probe, font=font)
+        bbox = draw.textbbox((0, 0), test, font=font)
         if bbox[2] - bbox[0] <= max_width:
             current = test
         else:
@@ -81,8 +152,7 @@ def _draw_rounded_rect(draw, xy, radius, fill):
 
 
 def _draw_node(draw, center, text, font, fill, text_color, max_width=220, padding=10):
-    lines_raw = _wrap_text(text, font, max_width - 2 * padding, draw)
-    lines = [reshape_fa(x) for x in lines_raw]
+    lines = _wrap_text(text, font, max_width - 2 * padding, draw)
     line_heights = []
     max_line_w = 0
     for line in lines:
@@ -113,25 +183,25 @@ def build_mindmap_structure(topic: str, research_data: dict | None = None) -> di
 
     if not key_points or len(key_points) < 2:
         key_points = [
-            {"title": "مکانیسم", "children": ["مسیر اثر", "شروع اثر", "متابولیسم"]},
-            {"title": "مصرف", "children": ["اندیکاسیون", "محدودیت", "گروه خاص"]},
-            {"title": "عوارض", "children": ["شایع", "جدی", "هشدار"]},
-            {"title": "تداخلات", "children": ["دارویی", "غذایی", "احتیاط"]},
-            {"title": "پایش", "children": ["دوز", "آزمایش", "آموزش"]},
+            {"title": "Mechanism", "children": ["Pathway", "Onset", "Metabolism"]},
+            {"title": "Indications", "children": ["Primary use", "Limits", "Special groups"]},
+            {"title": "Adverse effects", "children": ["Common", "Serious", "Warnings"]},
+            {"title": "Interactions", "children": ["Drug-drug", "Food", "Caution"]},
+            {"title": "Monitoring", "children": ["Dose", "Labs", "Counseling"]},
         ]
 
     normalized = []
     for kp in key_points[:5]:
         if isinstance(kp, dict):
-            title = str(kp.get("title") or "شاخه")[:28]
-            children = [str(c)[:26] for c in (kp.get("children") or []) if str(c).strip()][:3]
+            title = to_latin_label(kp.get("title") or "Branch", 28)
+            children = [to_latin_label(c, 26) for c in (kp.get("children") or []) if str(c).strip()][:3]
             if not children:
-                children = ["جزئیات مقاله"]
+                children = ["Details"]
             normalized.append({"title": title, "children": children})
         else:
-            normalized.append({"title": str(kp)[:28], "children": ["جزئیات"]})
+            normalized.append({"title": to_latin_label(kp, 28), "children": ["Details"]})
 
-    center = topic if len(topic) <= 36 else topic[:33] + "…"
+    center = to_latin_label(topic, 40)
     return {"center": center, "branches": normalized}
 
 
@@ -148,14 +218,13 @@ def generate_mindmap_image(
     img = Image.new("RGB", (width, height), COLORS["bg"])
     draw = ImageDraw.Draw(img)
 
-    # اندازه فونت کوچک‌تر و خوانا (نه درشت)
-    font_center = _load_font(20, bold=True)
-    font_l1 = _load_font(15, bold=True)
+    font_center = _load_font(18, bold=True)
+    font_l1 = _load_font(14, bold=True)
     font_l2 = _load_font(12, bold=False)
     font_footer = _load_font(11)
 
     cx, cy = width // 2, height // 2
-    _draw_node(draw, (cx, cy), center_text, font_center, COLORS["center"], COLORS["center_text"], 300, 12)
+    _draw_node(draw, (cx, cy), center_text, font_center, COLORS["center"], COLORS["center_text"], 320, 12)
 
     n = max(len(branches), 1)
     radius = 380
@@ -166,9 +235,9 @@ def generate_mindmap_image(
         by = int(cy + radius * math.sin(angle))
         draw.line([(cx, cy), (bx, by)], fill=COLORS["line"], width=3)
 
-        title = branch.get("title", f"شاخه {i+1}")
+        title = branch.get("title", f"Branch {i+1}")
         children = branch.get("children") or []
-        _draw_node(draw, (bx, by), title, font_l1, COLORS["level1"], COLORS["level1_text"], 190, 8)
+        _draw_node(draw, (bx, by), title, font_l1, COLORS["level1"], COLORS["level1_text"], 200, 8)
 
         if children:
             m = len(children)
@@ -181,18 +250,18 @@ def generate_mindmap_image(
                 cx2 = max(80, min(width - 80, cx2))
                 cy2 = max(50, min(height - 70, cy2))
                 draw.line([(bx, by), (cx2, cy2)], fill=COLORS["line"], width=2)
-                _draw_node(draw, (cx2, cy2), str(child), font_l2, COLORS["level2"], COLORS["level2_text"], 160, 6)
+                _draw_node(draw, (cx2, cy2), str(child), font_l2, COLORS["level2"], COLORS["level2_text"], 170, 6)
 
-    footer = reshape_fa("Pharma Research Agent | مایند مپ تحقیق دارویی")
+    footer = "Pharma Research Agent | Latin labels (temporary)"
     bbox = draw.textbbox((0, 0), footer, font=font_footer)
     fw = bbox[2] - bbox[0]
     draw.text(((width - fw) // 2, height - 32), footer, font=font_footer, fill=(100, 116, 139))
 
     if not output_name:
-        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in topic[:40])
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in to_latin_label(topic, 40))
         output_name = f"mindmap_{safe}.png"
 
     out_path = OUTPUT_DIR / output_name
     img.save(out_path, "PNG")
-    print(f"[MINDMAP] → {out_path}")
+    print(f"[MINDMAP] Latin labels → {out_path}")
     return str(out_path)
