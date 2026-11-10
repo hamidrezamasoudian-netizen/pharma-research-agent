@@ -8,10 +8,6 @@ on:
         required: true
         default: ""
 
-  # schedule:
-  #   - cron: "30 6 * * 1"
-  #   - cron: "30 15 * * 4"
-
 permissions:
   contents: write
 
@@ -54,7 +50,7 @@ jobs:
       - name: Run Research Agent (Supervisor mode)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          GEMINI_MODEL: gemini-3.8-flash
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -72,6 +68,7 @@ jobs:
               raise SystemExit(0)
 
           print(f"شروع تحقیق (Supervisor) برای موضوع: {topic}")
+          print(f"GEMINI_MODEL={os.environ.get('GEMINI_MODEL')}")
           result = asyncio.run(handle_research_request(topic))
           print("نتیجه:", {k: (v if not isinstance(v, dict) else list(v.keys())) for k, v in (result or {}).items()})
           PY
