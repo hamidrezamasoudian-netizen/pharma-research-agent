@@ -19,7 +19,7 @@ STATE_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = STATE_DIR / "research_history.json"
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
 USE_SUPERVISOR = os.environ.get("USE_SUPERVISOR", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 
