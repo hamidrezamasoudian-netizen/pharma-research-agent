@@ -1,6 +1,6 @@
 """
-document.py – مقاله علمی PDF (Word موقتاً خاموش)
-اصلاح ترتیب جملات فارسی: reshape جمله‌به‌جمله بدون برعکس کردن کل پاراگراف
+document.py – مقاله علمی PDF
+فارسی: reshape + bidi روی هر جمله جداگانه (کلمات درست، ترتیب جملات حفظ شود)
 """
 
 from __future__ import annotations
@@ -21,12 +21,14 @@ from reportlab.lib.enums import TA_RIGHT, TA_CENTER
 
 try:
     import arabic_reshaper
+    from bidi.algorithm import get_display
 
     def reshape_fa(text: str) -> str:
-        """فقط اتصال حروف؛ بدون get_display تا ترتیب جملات عوض نشود."""
+        """اتصال حروف + جهت‌دهی برای موتور LTR گزارش‌لب."""
         if not text:
             return ""
-        return arabic_reshaper.reshape(str(text))
+        # اول reshape، بعد bidi برای نمایش صحیح در PDF
+        return get_display(arabic_reshaper.reshape(str(text)))
 except Exception:
     def reshape_fa(text: str) -> str:
         return str(text or "")
@@ -68,7 +70,6 @@ def _xml_escape(s: str) -> str:
 
 
 def _split_sentences(text: str) -> list[str]:
-    """متن را به جملات/خطوط جدا می‌کند تا ترتیب منطقی حفظ شود."""
     raw = str(text or "").strip()
     if not raw:
         return []
@@ -77,7 +78,6 @@ def _split_sentences(text: str) -> list[str]:
         block = block.strip()
         if not block:
             continue
-        # جدا کردن بر اساس نقطه فارسی/انگلیسی و علامت سوال
         chunks = re.split(r"(?<=[\.!?؟۔])\s+", block)
         for ch in chunks:
             ch = ch.strip()
@@ -170,6 +170,7 @@ def create_pdf(content: dict[str, Any], output_path: Path) -> Path:
         alignment=TA_CENTER,
         spaceAfter=8,
         leading=20,
+        wordWrap="CJK",
     ))
     styles.add(ParagraphStyle(
         name="HeadingFa",
@@ -179,6 +180,7 @@ def create_pdf(content: dict[str, Any], output_path: Path) -> Path:
         spaceBefore=10,
         spaceAfter=4,
         leading=16,
+        wordWrap="CJK",
     ))
     styles.add(ParagraphStyle(
         name="BodyFa",
@@ -187,6 +189,7 @@ def create_pdf(content: dict[str, Any], output_path: Path) -> Path:
         alignment=TA_RIGHT,
         spaceAfter=3,
         leading=15,
+        wordWrap="CJK",
     ))
     styles.add(ParagraphStyle(
         name="FooterFa",
@@ -194,12 +197,14 @@ def create_pdf(content: dict[str, Any], output_path: Path) -> Path:
         fontSize=8,
         alignment=TA_CENTER,
         textColor="#64748b",
+        wordWrap="CJK",
     ))
 
     def add_fa_block(story_list, text: str, style_name: str):
         for sentence in _split_sentences(text):
-            shaped = reshape_fa(_xml_escape(sentence))
-            story_list.append(Paragraph(shaped, styles[style_name]))
+            # reshape+bidi روی متن خام، بعد escape برای ReportLab
+            shaped = reshape_fa(sentence)
+            story_list.append(Paragraph(_xml_escape(shaped), styles[style_name]))
 
     story = []
     add_fa_block(story, content["title"], "TitleFa")
@@ -245,9 +250,7 @@ def generate_article(
     docx_path = None
     pdf_path = OUTPUT_DIR / f"{output_basename}.pdf"
 
-    if ENABLE_DOCX:
-        print("[DOCUMENT] ENABLE_DOCX=true اما DOCX در این نسخه ساخته نمی‌شود")
-    else:
+    if not ENABLE_DOCX:
         print("[DOCUMENT] تولید Word موقتاً غیرفعال است (ENABLE_DOCX=false)")
 
     try:
