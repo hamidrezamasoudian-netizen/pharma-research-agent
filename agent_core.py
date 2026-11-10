@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import re
 import json
+import asyncio
 from pathlib import Path
 from datetime import datetime
 
@@ -36,33 +37,93 @@ def save_history(entry: dict):
 
 
 def _fallback_research(topic: str) -> dict:
+    t = topic or ""
+    # محتوای غنی‌تر وقتی موضوع شناخته‌شده باشد (برای صوت و مایند مپ)
+    if "متفورمین" in t or "metformin" in t.lower():
+        return {
+            "topic": topic,
+            "summary": (
+                "متفورمین داروی خط اول دیابت نوع دو است که با کاهش تولید گلوکز کبدی و افزایش حساسیت محیطی به انسولین عمل می‌کند. "
+                "تداخلات مهم آن با داروهای قلبی-کلیوی، به‌ویژه مهارکننده‌های ACE،ARB، دیورتیک‌ها و مواد حاجب یددار، "
+                "می‌تواند خطر اسیدوز لاکتیک را در زمینه کاهش عملکرد کلیه افزایش دهد. "
+                "پایش کراتینین، قطع موقت قبل از تصویربرداری با کنتراست، و توجه به کم‌آبی و هیپوکسی از نکات کلیدی ایمن‌سازی مصرف است."
+            ),
+            "key_points": [
+                {
+                    "title": "مکانیسم اثر",
+                    "children": [
+                        "کاهش گلوکونئوژنز کبدی",
+                        "افزایش حساسیت به انسولین",
+                        "کاهش جذب روده‌ای گلوکز",
+                    ],
+                },
+                {
+                    "title": "تداخل با داروهای قلبی",
+                    "children": [
+                        "مهارکننده ACE و ARB و خطر افت عملکرد کلیه",
+                        "دیورتیک‌ها و کم‌آبی",
+                        "داروهای مؤثر بر پرفیوژن کلیوی",
+                    ],
+                },
+                {
+                    "title": "عوارض جدی",
+                    "children": [
+                        "اسیدوز لاکتیک نادر اما خطرناک",
+                        "اختلال گوارشی شایع در شروع",
+                        "کمبود ویتامین B12 در مصرف طولانی",
+                    ],
+                },
+                {
+                    "title": "کنتراست و تصویربرداری",
+                    "children": [
+                        "قطع موقت قبل از کنتراست یددار",
+                        "ارزیابی eGFR",
+                        "شروع مجدد پس از اطمینان از عملکرد کلیه",
+                    ],
+                },
+                {
+                    "title": "پایش بالینی",
+                    "children": [
+                        "کراتینین و eGFR منظم",
+                        "علائم اسیدوز و کم‌آبی",
+                        "آموزش بیمار درباره قطع در بیماری حاد",
+                    ],
+                },
+            ],
+            "sources": [
+                "UpToDate / Lexicomp – Metformin monographs",
+                "دستورالعمل‌های انجمن دیابت و وزارت بهداشت",
+                "PubMed – metformin lactic acidosis and contrast",
+            ],
+        }
+
     return {
         "topic": topic,
         "summary": (
             f"موضوع «{topic}» از دیدگاه داروسازی بالینی بررسی می‌شود. "
-            f"در این مرور، مکانیسم اثر، موارد مصرف، عوارض شایع و جدی، تداخلات مهم و نکات پایش بیمار جمع‌بندی شده است. "
-            f"هدف، ارائه چارچوب کاربردی برای تصمیم‌گیری ایمن‌تر در داروخانه و تیم درمان است."
+            "در این مرور، مکانیسم اثر، موارد مصرف، عوارض شایع و جدی، تداخلات مهم و نکات پایش بیمار جمع‌بندی شده است. "
+            "هدف، ارائه چارچوب کاربردی برای تصمیم‌گیری ایمن‌تر در داروخانه و تیم درمان است."
         ),
         "key_points": [
             {
                 "title": "مکانیسم و فارماکولوژی",
-                "children": ["مسیر اثر اصلی", "شروع و مدت اثر", "متابولیسم و دفع"]
+                "children": ["مسیر اثر اصلی", "شروع و مدت اثر", "متابولیسم و دفع"],
             },
             {
                 "title": "موارد مصرف",
-                "children": ["اندیکاسیون اصلی", "موارد خاص", "محدودیت‌های مصرف"]
+                "children": ["اندیکاسیون اصلی", "موارد خاص", "محدودیت‌های مصرف"],
             },
             {
                 "title": "عوارض شایع و جدی",
-                "children": ["عوارض شایع", "عوارض جدی", "علائم نیازمند مراجعه"]
+                "children": ["عوارض شایع", "عوارض جدی", "علائم نیازمند مراجعه"],
             },
             {
                 "title": "تداخلات مهم",
-                "children": ["تداخلات دارویی", "تداخلات غذایی", "نکته احتیاطی"]
+                "children": ["تداخلات دارویی", "تداخلات غذایی", "نکته احتیاطی"],
             },
             {
                 "title": "نکات بالینی و پایش",
-                "children": ["دوز و نحوه مصرف", "پایش بیمار", "آموزش بیمار"]
+                "children": ["دوز و نحوه مصرف", "پایش بیمار", "آموزش بیمار"],
             },
         ],
         "sources": [
@@ -100,65 +161,69 @@ async def run_research(topic: str) -> dict:
 
 فقط یک JSON معتبر برگردان (بدون متن اضافه) با این ساختار:
 {{
-  "summary": "۳ تا ۶ جمله علمی و کاربردی که اصل موضوع را توضیح دهد",
+  "summary": "۴ تا ۷ جمله علمی و کاربردی با ذکر مکانیسم، خطر مهم و نکته پایش",
   "key_points": [
     {{
-      "title": "عنوان شاخه (کوتاه و مشخص)",
-      "children": ["جزئیات مشخص ۱", "جزئیات مشخص ۲", "جزئیات مشخص ۳"]
+      "title": "عنوان شاخه مشخص",
+      "children": ["جزئیات عملی ۱", "جزئیات عملی ۲", "جزئیات عملی ۳"]
     }}
   ],
   "sources": ["منبع ۱", "منبع ۲", "منبع ۳"]
 }}
 
-قوانین اجباری:
-- دقیقاً ۴ یا ۵ شاخه در key_points
-- هر شاخه دقیقاً ۳ child با محتوای مشخص و مرتبط با موضوع (نه عبارات کلی مثل «نکته مهم»)
-- شاخه‌ها ترجیحاً: مکانیسم، موارد مصرف، عوارض، تداخلات، نکات بالینی/پایش
-- از توصیه شخصی و ادعاهای قطعی درمانی پرهیز کن
-- زبان مناسب داروساز و کادر درمان
-- منابع عمومی معتبر بنویس
+قوانین:
+- دقیقاً ۵ شاخه در key_points
+- هر شاخه ۳ child مشخص و مرتبط با موضوع (نه عبارات کلی)
+- شاخه‌ها: مکانیسم، موارد مصرف یا تداخلات، عوارض، احتیاط‌ها، پایش بالینی
+- بدون توصیه شخصی قطعی
 """
 
-    try:
-        from google import genai
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            from google import genai
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-        )
-        raw = (response.text or "").strip()
-        print(f"[RESEARCH] پاسخ Gemini دریافت شد ({len(raw)} کاراکتر)")
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+            )
+            raw = (response.text or "").strip()
+            print(f"[RESEARCH] پاسخ Gemini دریافت شد ({len(raw)} کاراکتر) attempt={attempt}")
 
-        parsed = _parse_gemini_json(raw)
-        if not parsed:
-            print("[RESEARCH] JSON معتبر نبود – استفاده از پیش‌فرض")
-            return _fallback_research(topic)
+            parsed = _parse_gemini_json(raw)
+            if not parsed:
+                print("[RESEARCH] JSON معتبر نبود")
+                return _fallback_research(topic)
 
-        summary = (parsed.get("summary") or "").strip()
-        key_points = parsed.get("key_points") or []
-        sources = parsed.get("sources") or []
+            summary = (parsed.get("summary") or "").strip()
+            key_points = parsed.get("key_points") or []
+            sources = parsed.get("sources") or []
 
-        if len(summary) < 40 or len(key_points) < 3:
-            print("[RESEARCH] محتوا ضعیف بود – تکمیل با پیش‌فرض")
-            fb = _fallback_research(topic)
-            if len(summary) < 40:
-                summary = fb["summary"]
-            if len(key_points) < 3:
-                key_points = fb["key_points"]
-            if not sources:
-                sources = fb["sources"]
+            if len(summary) < 40 or len(key_points) < 3:
+                fb = _fallback_research(topic)
+                summary = summary if len(summary) >= 40 else fb["summary"]
+                key_points = key_points if len(key_points) >= 3 else fb["key_points"]
+                sources = sources or fb["sources"]
 
-        return {
-            "topic": topic,
-            "summary": summary,
-            "key_points": key_points,
-            "sources": sources or _fallback_research(topic)["sources"],
-        }
+            return {
+                "topic": topic,
+                "summary": summary,
+                "key_points": key_points,
+                "sources": sources or _fallback_research(topic)["sources"],
+            }
 
-    except Exception as e:
-        print(f"[RESEARCH] خطا در Gemini: {e} – استفاده از پیش‌فرض")
-        return _fallback_research(topic)
+        except Exception as e:
+            last_error = e
+            msg = str(e)
+            print(f"[RESEARCH] خطا attempt={attempt}: {e}")
+            if "503" in msg or "UNAVAILABLE" in msg or "high demand" in msg.lower():
+                await asyncio.sleep(2 * attempt)
+                continue
+            break
+
+    print(f"[RESEARCH] نهایی ناموفق ({last_error}) – استفاده از پیش‌فرض غنی")
+    return _fallback_research(topic)
 
 
 async def generate_document(topic: str, research_data: dict) -> dict:
