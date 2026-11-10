@@ -1,0 +1,77 @@
+name: Telegram Poller
+
+on:
+  schedule:
+    # هر ۵ دقیقه یک‌بار
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-dejavu-core
+
+      - name: Install Vazirmatn font
+        run: |
+          mkdir -p fonts
+          wget -q -O vazir.zip "https://github.com/rastikerdar/vazirmatn/releases/download/v33.003/vazirmatn-v33.003.zip" || true
+          if [ -f vazir.zip ]; then
+            unzip -q vazir.zip -d vazir_tmp || true
+            find vazir_tmp -name "Vazirmatn-Regular.ttf" -exec cp {} fonts/ \; || true
+            find vazir_tmp -name "Vazirmatn-Bold.ttf" -exec cp {} fonts/ \; || true
+          fi
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Poll Telegram and process new topics
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
+          USE_SUPERVISOR: "true"
+        run: python telegram_poller.py
+
+      - name: Save state (last update id + history)
+        if: always()
+        run: |
+          git config user.name "pharma-research-bot"
+          git config user.email "bot@users.noreply.github.com"
+          mkdir -p state
+          git add state/last_update_id.txt state/research_history.json 2>/dev/null || true
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update telegram poller state"
+            git push || true
+          else
+            echo "No state changes"
+          fi
+
+      - name: Upload generated files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poller-output
+          path: outputs/generated/
+          if-no-files-found: ignore
+          retention-days: 7
