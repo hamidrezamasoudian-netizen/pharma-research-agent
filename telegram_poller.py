@@ -1,8 +1,9 @@
 """
 telegram_poller.py
 
-- فقط آخرین موضوع ادمین را پردازش می‌کند (صف قدیمی را رد می‌کند)
-- last_update_id را همان ابتدا جلو می‌برد تا پیام تکراری نماند
+- webhook را حذف می‌کند (در صورت فعال بودن getUpdates خالی می‌ماند)
+- فقط آخرین موضوع ادمین را پردازش می‌کند
+- لاگ تشخیصی برای صف خالی
 """
 
 from __future__ import annotations
@@ -45,6 +46,23 @@ def tg_api(method: str, **params):
     if not data.get("ok"):
         raise RuntimeError(f"Telegram API error: {data}")
     return data["result"]
+
+
+def ensure_polling_mode() -> None:
+    """اگر webhook فعال باشد getUpdates همیشه خالی است."""
+    try:
+        info = tg_api("getWebhookInfo")
+        url = (info or {}).get("url") or ""
+        if url:
+            print(f"[POLLER] webhook فعال بود → حذف: {url}")
+            tg_api("deleteWebhook", drop_pending_updates=False)
+        else:
+            print("[POLLER] webhook غیرفعال است (OK)")
+        pending = (info or {}).get("pending_update_count")
+        if pending is not None:
+            print(f"[POLLER] pending_update_count={pending}")
+    except Exception as e:
+        print(f"[POLLER] بررسی webhook ناموفق: {e}")
 
 
 def send_message(chat_id: str | int, text: str):
@@ -98,7 +116,6 @@ def fetch_updates(offset: int) -> list[dict]:
 
 
 def ack_updates(max_update_id: int) -> None:
-    """همه آپدیت‌ها تا max را از صف تلگرام پاک می‌کند."""
     if max_update_id <= 0:
         return
     try:
@@ -110,7 +127,7 @@ def ack_updates(max_update_id: int) -> None:
 def is_admin(user_id: str | int) -> bool:
     if not TELEGRAM_ADMIN_ID:
         return True
-    return str(user_id) == str(TELEGRAM_ADMIN_ID)
+    return str(user_id).strip() == str(TELEGRAM_ADMIN_ID).strip()
 
 
 async def process_topic(chat_id: str | int, topic: str):
@@ -152,7 +169,7 @@ async def process_topic(chat_id: str | int, topic: str):
     send_message(
         chat_id,
         f"✅ پکیج تحقیق «{title}» آماده شد.\n"
-        "شامل: مقاله (Word/PDF) + مایند مپ + خلاصه صوتی",
+        "شامل: مقاله (PDF) + مایند مپ + خلاصه صوتی",
     )
 
 
@@ -160,19 +177,23 @@ def main():
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN تنظیم نشده است")
 
+    ensure_polling_mode()
+
     last_id = get_last_update_id()
-    updates = fetch_updates(offset=last_id + 1 if last_id else 0)
+    print(f"[POLLER] last_update_id فعلی={last_id} | admin_id={TELEGRAM_ADMIN_ID or '(باز)'}")
+
+    offset = last_id + 1 if last_id else 0
+    updates = fetch_updates(offset=offset)
+    print(f"[POLLER] تعداد آپدیت با offset={offset}: {len(updates)}")
 
     if not updates:
-        print("[POLLER] پیام جدیدی نیست")
+        print("[POLLER] پیام جدیدی نیست — لطفاً موضوع را دوباره به ربات بفرستید")
         return
 
-    # بالاترین update_id را همان اول قفل کن تا تکرار نشود
     max_id = max(int(u.get("update_id", 0)) for u in updates)
     save_last_update_id(max_id)
     ack_updates(max_id)
 
-    # فقط موضوعات متنی ادمین را جمع کن
     candidates: list[tuple[int, int | str, str]] = []
     for upd in updates:
         update_id = int(upd.get("update_id", 0))
@@ -183,20 +204,28 @@ def main():
         chat_id = chat.get("id")
         user_id = user.get("id")
 
+        print(
+            f"[POLLER] update={update_id} user={user_id} chat={chat_id} "
+            f"text={(text[:60] + '…') if len(text) > 60 else text}"
+        )
+
         if not text or chat_id is None:
+            print("[POLLER] رد: بدون متن")
             continue
 
         if text.startswith("/start"):
             try:
-                send_message(chat_id, "سلام! فقط آخرین موضوعی که می‌فرستید پردازش می‌شود.")
+                send_message(chat_id, "سلام! موضوع تحقیق را بفرستید.")
             except Exception:
                 pass
             continue
 
         if text.startswith("/"):
+            print("[POLLER] رد: دستور")
             continue
 
         if not is_admin(user_id):
+            print(f"[POLLER] رد: user_id={user_id} با admin={TELEGRAM_ADMIN_ID} یکی نیست")
             try:
                 send_message(chat_id, "دسترسی فقط برای ادمین فعال است.")
             except Exception:
@@ -204,19 +233,18 @@ def main():
             continue
 
         if len(text) < 5:
+            print("[POLLER] رد: متن خیلی کوتاه")
             continue
 
         candidates.append((update_id, chat_id, text))
 
     if not candidates:
-        print("[POLLER] موضوع قابل پردازش نبود (فقط دستور یا پیام کوتاه)")
+        print("[POLLER] موضوع قابل پردازش نبود")
         return
 
-    # فقط آخرین موضوع
     candidates.sort(key=lambda x: x[0])
     if len(candidates) > 1:
-        skipped = len(candidates) - 1
-        print(f"[POLLER] {skipped} موضوع قدیمی رد شد؛ فقط آخرین پردازش می‌شود")
+        print(f"[POLLER] {len(candidates) - 1} موضوع قدیمی رد شد؛ فقط آخرین پردازش می‌شود")
 
     update_id, chat_id, topic = candidates[-1]
     print(f"[POLLER] پردازش آخرین موضوع (update={update_id}): {topic}")
