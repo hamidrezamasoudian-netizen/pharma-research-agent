@@ -1,8 +1,9 @@
 name: Telegram Poller
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # schedule temporarily disabled to conserve Actions minutes (was every 5 minutes)
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
